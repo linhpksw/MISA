@@ -106,66 +106,22 @@ const path = require('path');
         }
         console.log('Queued export_id:', exportId);
 
-        // 2) Poll for status and attempt downloads eagerly
-        const outName = `${FILE_NAME}.${FILE_TYPE}`;
-        const downloadHeaders = { ...headers };
-        delete downloadHeaders['Content-Type'];
-        const attemptedDownloads = [];
-        const tryDownload = async (candidateUrl, candidateFileName) => {
-            const urls = [];
-            const addUrl = (url) => {
-                if (url && !urls.includes(url)) {
-                    urls.push(url);
-                }
-            };
-            const cleanBase = BASE.replace(/\/$/, '');
-            if (candidateFileName) {
-                const cleanName = candidateFileName.replace(/^\//, '');
-                const encodedName = encodeURIComponent(cleanName);
-                const encodedDb = encodeURIComponent(DB_ID || contextObj.DatabaseId || '');
-                const encodedOut = encodeURIComponent(outName);
-                addUrl(
-                    `${cleanBase}/g2/api/file/v1/file/download?type=Temp&file=${encodedName}&dbid=${encodedDb}&name=${encodedOut}`
-                );
-                addUrl(`${cleanBase}/g2/api/export/v1/export/download_file/${cleanName}`);
-            }
-            if (candidateUrl) {
-                const normalized = candidateUrl.startsWith('http')
-                    ? candidateUrl
-                    : `${cleanBase}/${candidateUrl.replace(/^\//, '')}`;
-                addUrl(normalized);
-            }
-            for (const url of urls) {
-                try {
-                    const resp = await axios.get(url, {
-                        responseType: 'arraybuffer',
-                        headers: downloadHeaders,
-                    });
-                    return { resp, url };
-                } catch (downloadErr) {
-                    attemptedDownloads.push({
-                        url,
-                        status: downloadErr.response?.status,
-                    });
-                }
-            }
-            return null;
-        };
-
+        // 2) Poll for status + file URL
         const pollUrl = `${BASE}/g2/api/export/v1/export/get_notify_export_by_pull/${exportId}`;
         let fileUrl = null;
         let fileNameDownload = null;
-        let fileResp = null;
-        let resolvedFileUrl = null;
-
         for (let i = 0; i < POLL_MAX; i++) {
-            if (i > 0) await sleep(POLL_MS);
+            await new Promise((r) => setTimeout(r, POLL_MS));
             const st = await axios.get(pollUrl, { headers });
             const data = st?.data?.Data || {};
 
             const status = data.Status ?? data.status ?? data.ExportStatus ?? null;
             const nextFileName =
-                data.file_name_download || data.FileNameDownload || data.file_name || data.FileName || null;
+                data.file_name_download ||
+                data.FileNameDownload ||
+                data.file_name ||
+                data.FileName ||
+                null;
             if (nextFileName && !fileNameDownload) {
                 fileNameDownload = nextFileName;
                 console.log(`Found file_name_download: ${fileNameDownload}`);
@@ -179,41 +135,75 @@ const path = require('path');
                 null;
 
             console.log(`poll#${i} status=${status ?? 'unknown'} url=${fileUrl ?? ''}`);
-
-            if (fileUrl || fileNameDownload) {
-                const downloadResult = await tryDownload(fileUrl, fileNameDownload);
-                if (downloadResult) {
-                    fileResp = downloadResult.resp;
-                    resolvedFileUrl = downloadResult.url;
-                    break;
-                }
-            }
-
+            if (fileUrl) break;
             if (status === 3) break;
         }
 
-        if (!fileResp) {
-            const finalAttempt = await tryDownload(fileUrl, fileNameDownload);
-            if (finalAttempt) {
-                fileResp = finalAttempt.resp;
-                resolvedFileUrl = finalAttempt.url;
+        if (!fileUrl && !fileNameDownload) {
+            console.warn(
+                'No download URL found in notify response. Inspect the full response to locate the file field.'
+            );
+            fs.writeFileSync('last-notify.json', JSON.stringify((await axios.get(pollUrl, { headers })).data, null, 2));
+            console.warn('Wrote last-notify.json for inspection.');
+            process.exit(2);
+        }
+
+        // 3) Download file
+        const outName = `${FILE_NAME}.${FILE_TYPE}`;
+        const downloadHeaders = { ...headers };
+        delete downloadHeaders['Content-Type'];
+
+        let resolvedFileUrl = null;
+        if (fileUrl) {
+            resolvedFileUrl = fileUrl.startsWith('http')
+                ? fileUrl
+                : `${BASE.replace(/\/$/, '')}/${fileUrl.replace(/^\//, '')}`;
+        }
+
+        const candidates = [];
+        if (resolvedFileUrl)
+            candidates.push({ method: 'get', url: resolvedFileUrl, headers: downloadHeaders });
+        if (fileNameDownload) {
+            const cleanBase = BASE.replace(/\/$/, '');
+            const cleanName = fileNameDownload.replace(/^\//, '');
+            const encodedName = encodeURIComponent(cleanName);
+            const encodedDb = encodeURIComponent(DB_ID || contextObj.DatabaseId || '');
+            const encodedOut = encodeURIComponent(outName);
+            candidates.push({
+                method: 'get',
+                url: `${cleanBase}/g2/api/file/v1/file/download?type=Temp&file=${encodedName}&dbid=${encodedDb}&name=${encodedOut}`,
+                headers: downloadHeaders,
+            });
+            candidates.push({
+                method: 'get',
+                url: `${cleanBase}/g2/api/export/v1/export/download_file/${cleanName}`,
+                headers: downloadHeaders,
+            });
+        }
+
+        let fileResp = null;
+        let attempted = [];
+        for (const candidate of candidates) {
+            try {
+                const resp = await axios.get(candidate.url, {
+                    responseType: 'arraybuffer',
+                    headers: candidate.headers,
+                });
+                fileResp = resp;
+                resolvedFileUrl = candidate.url;
+                break;
+            } catch (downloadErr) {
+                attempted.push({
+                    url: candidate.url,
+                    method: candidate.method,
+                    status: downloadErr.response?.status,
+                    body: downloadErr.response?.data,
+                });
             }
         }
 
         if (!fileResp) {
-            if (!fileUrl && !fileNameDownload) {
-                console.warn(
-                    'No download URL found in notify response. Inspect the full response to locate the file field.'
-                );
-                fs.writeFileSync(
-                    'last-notify.json',
-                    JSON.stringify((await axios.get(pollUrl, { headers })).data, null, 2)
-                );
-                console.warn('Wrote last-notify.json for inspection.');
-                process.exit(2);
-            }
-
-            console.warn('Unable to download file. Attempted endpoints:', attemptedDownloads);
+            console.warn('Unable to download file. Attempted endpoints:', attempted);
             fs.writeFileSync('last-notify.json', JSON.stringify((await axios.get(pollUrl, { headers })).data, null, 2));
             console.warn('Wrote last-notify.json for inspection.');
             process.exit(3);

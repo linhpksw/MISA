@@ -1,0 +1,18 @@
+{
+    "TenantId": "17ebda1e-bf57-4e6e-8394-da28545b5f07",
+    "TenantCode": "nnqucgnd",
+    "DatabaseId": "806f9ecd-bed2-42d1-a222-8047c0e7c90e",
+    "BranchId": "716337ae-3f5c-4075-8e96-a41e7c1bce71",
+    "WorkingBook": 0,
+    "IncludeDependentBranch": "true",
+    "SessionId": "ssc9fc70cc38554c448e1da63e4cf10435.083004d96858d8e8bcbac6105a54d116.806f9ecdbed242d1a2228047c0e7c90e.638972757810619283",
+    "DBType": 1,
+    "AuthType": 0,
+    "AmisSessionId": "MQA3AGUAYgBkAGEAMQBlAGIAZgA1ADcANABlADYAZQA4ADMAOQA0AGQAYQAyADgANQA0ADUAYgA1AGYAMAA3AGMANwBlAGQAMgA4AGUAZgA4ADAAMgA2ADQAMgA5AGQAYQBjAGIAYQBmAGMAOQBhADcAMQA3ADYAOQBhADYANAA=",
+    "HasAgent": false,
+    "UserType": 1,
+    "art": 2,
+    "UserId": "c9fc70cc-3855-4c44-8e1d-a63e4cf10435",
+    "isc": false,
+    "Language": "vi"
+}
