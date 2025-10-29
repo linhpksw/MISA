@@ -1,6 +1,6 @@
 const express = require('express');
 const morgan = require('morgan');
-const { fetchMisaCustomers, fetchOdooCustomers } = require('./export');
+const { fetchMisaCustomers, fetchOdooCustomers } = require('./services');
 
 const PORT = Number(process.env.PORT || 3000);
 const app = express();
@@ -40,5 +40,5 @@ app.get('/odoo/customers', async (_req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+    console.log(`Customer service listening on port ${PORT}`);
 });
