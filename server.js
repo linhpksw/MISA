@@ -1,6 +1,6 @@
 const express = require('express');
 const morgan = require('morgan');
-const { exportCustomerReport } = require('./export');
+const { fetchMisaCustomers, fetchOdooCustomers } = require('./export');
 
 const PORT = Number(process.env.PORT || 3000);
 const app = express();
@@ -11,28 +11,34 @@ app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
 });
 
-app.get('/export', async (_req, res) => {
+app.get('/misa/customers', async (_req, res) => {
     try {
-        const { buffer, fileName, contentType } = await exportCustomerReport();
-        const encodedFileName = encodeURIComponent(fileName);
-
-        res.set({
-            'Content-Type': contentType,
-            'Content-Disposition': `attachment; filename="${fileName}"; filename*=UTF-8''${encodedFileName}`,
-            'Cache-Control': 'no-store',
-        });
-
-        res.send(buffer);
+        const { rows, metadata } = await fetchMisaCustomers();
+        res.json({ data: rows, meta: metadata });
     } catch (error) {
-        console.error('Export failed', error);
+        console.error('MISA customer fetch failed', error);
         const status = error.response?.status;
         res.status(status && status >= 400 ? status : 500).json({
-            message: 'Failed to generate export file.',
+            message: 'Failed to retrieve MISA customers.',
+            detail: error.message,
+        });
+    }
+});
+
+app.get('/odoo/customers', async (_req, res) => {
+    try {
+        const { rows, metadata } = await fetchOdooCustomers();
+        res.json({ data: rows, meta: metadata });
+    } catch (error) {
+        console.error('Odoo customer fetch failed', error);
+        const status = error.response?.status;
+        res.status(status && status >= 400 ? status : 500).json({
+            message: 'Failed to retrieve Odoo customers.',
             detail: error.message,
         });
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`Export server listening on port ${PORT}`);
+    console.log(`Server listening on port ${PORT}`);
 });
